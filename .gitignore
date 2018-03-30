@@ -1,0 +1,12 @@
+.ipynb_checkpoints/*
+doc/_build/*
+doc/notebooks_rst/*
+dist/*
+build/*
+argiope.egg-info/*
+*.jpg
+*.png
+*.tiff
+*.pdf
+*.mp4
+*.mvk
