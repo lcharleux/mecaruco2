@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, shutil
 from string import Template
 import subprocess
 sys.path.append(os.path.abspath('sphinxext'))
@@ -7,47 +7,81 @@ sys.path.append(os.path.abspath('sphinxext'))
 # NOTEBOOKS MANAGEMENT
 ################################################################################
 # SETUP
-nbdir  = "./notebooks/" # The notebooks that contains the notebooks.
+nbdir  = "./notebooks/"     # The notebooks that contains the notebooks.
 rstdir = "./notebooks_rst/" # The directory where sphinx can store rst files.
 template = Template(open("notebooks_index.template").read())
-exclude_prefixes = ('_', '.')  # exclusion prefixes
-file_suffixes = (".ipynb",)
+exclude_prefixes = ('_', '.')  # exclusion prefixes for files and folders
 title_levels = "+=~-_"
+
+
+nbdir = nbdir.strip("./")
+rstdir = rstdir.strip("./")
 
 # DATA PROCESSING (whole section needs serious cleaning)
 for dirpath, dirnames, filenames in os.walk(nbdir):
-  dirnames[:] = [dirname
-                 for dirname in dirnames
-                 if not dirname.startswith(exclude_prefixes)]
-  filenames = [f for f in filenames if f.endswith(file_suffixes)]
-  path_depth = len(dirpath.strip("./").strip("/").split("/")) 
-  rst_path = dirpath.replace(nbdir, rstdir) 
-  if rst_path.endswith("/") == False: rst_path += "/"
-  if os.path.isdir(rst_path) == False: os.mkdir(rst_path)
-  node = dirpath.strip("/").split("/")[-1]
-  node_index = template.substitute(title = node.replace("_", " ").title(), 
-                                   underline = 80*title_levels[path_depth])
-  for d in dirnames: 
-    node_index += "   " + d + "/" + d + "\n"
-  for f in filenames:
-    nb = f[:-6]
-    rst_back_path = "/".join([".."]*len(dirpath.strip(
-                    "./").strip("/").split("/"))) + "/"
-    nb_rst_path = ( rst_path.strip("/").strip("./")) +"/"+ nb +".rst"
-    node_index += "   " + nb + "\n"
+    dirnames[:] = sorted([dirname for dirname in dirnames
+                   if not dirname.startswith(exclude_prefixes)])
+    filenames[:] = sorted([f for f in filenames 
+                   if True not in [f.startswith(ep) for ep 
+                                   in exclude_prefixes]])
+    print("DIR PATH: ", dirpath)
+    print("  DIR NAMES: ", dirnames)
+    print("  DIR FILENAMES: ", filenames)
     
-    os.system("jupyter-nbconvert {0}/{1}.ipynb --to rst --output {2}".format(
-          dirpath, nb, rst_back_path+nb_rst_path))
+    # PATH MANAGEMENT
+    dirpath = dirpath.strip("./")
+    pathdepth = len(dirpath.strip("/").split("/")) 
+    rstpath   = dirpath.replace(nbdir, rstdir).strip("/").strip("./") + "/"
+    rootpath  = "/".join([".."] * pathdepth) + "/"
+    if os.path.isdir(rstpath) == False: 
+        os.mkdir(rstpath)
+    node = dirpath.strip("/").split("/")[-1]
     
+    # TITLE
+    nodetitle = node.split("_")
+    if len(nodetitle) > 1: 
+        nodetitle = " ".join(nodetitle[1:])
+    else:
+        nodetitle = nodetitle[0] 
+    print("  TITLE: ", nodetitle) 
+    otherfiles = []
+    notebooks  = []
     
-    rst = ""
-    rst += ".. Note::\n\n  This notebook can be downloaded here: "
-    rst += ":download:`{2}.ipynb <{0}{1}/{2}.ipynb>` \n\n".format(
-             rst_back_path, dirpath.strip("./"), nb)
-    #rst += ".. contents::\n   :depth: 2\n"
-    rst += open(nb_rst_path).read()
-    open(nb_rst_path, "w").write(rst)
-  open(rst_path + node + ".rst", "w").write(node_index)              
+    for f in filenames:
+        if f.endswith(".ipynb"): # NOTEBOOKS
+            # NOTEBOOK NAME
+            nb = f[:-6]
+            notebooks.append(nb)
+            # RST CONVERSION
+            nbrstpath = rstpath + nb +".rst" # WARNING: NBCONVERT WORKS IN NOTEBOOK DIR, NOT IN CURRENT DIR
+            rstconvertcommand = "jupyter-nbconvert {0}/{1}.ipynb --to rst --output {2}"
+            os.system(rstconvertcommand.format(dirpath, nb, rootpath + nbrstpath))
+            rst  = ".. Note::\n\n  This notebook can be downloaded here: "
+            rst += ":download:`{2}.ipynb <{0}{1}/{2}.ipynb>` \n\n".format(
+                     rootpath, dirpath, nb)
+            rst += open(nbrstpath).read()
+            open(nbrstpath, "w").write(rst)
+            
+          
+        else: # OTHER FILES
+            otherfiles.append(f)
+    downloadtemplate = "#. :download:`{0}<{1}>`"
+    files = ""
+    if len(otherfiles)!= 0:
+        files = "Files in this folder:\n\n" 
+        downloadlinks = [
+            downloadtemplate.format(f, rootpath + dirpath + "/" + f) 
+            for f in otherfiles ]
+        files += "\n".join(downloadlinks)                       
+    
+    nodeindex = template.substitute(
+                         title = nodetitle.title(), 
+                         underline = 80 * title_levels[pathdepth],
+                         files = files)      
+    nodeindex += "\n".join(["   " + nb for nb in notebooks]) 
+    for d in dirnames: nodeindex += "   " + d + "/" + d + "\n"
+    open(rstpath + node + ".rst", "w").write(nodeindex)
+                 
                        
 ################################################################################
 
@@ -65,7 +99,19 @@ extensions = ['sphinx.ext.autodoc',
 'sphinx.ext.doctest',
 'matplotlib.sphinxext.only_directives',
 'matplotlib.sphinxext.plot_directive',
+#'sphinx_gallery.gen_gallery'
 ]
+
+"""
+# LC 2018/01/26
+# SPHINX GALLERY CONFIG
+sphinx_gallery_conf = {
+# path to your examples scripts
+'examples_dirs' : 'examples',
+# path where to save gallery generated examples
+'gallery_dirs'  : 'auto_examples',
+'backreferences_dir': False}
+"""
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -80,15 +126,16 @@ source_encoding = 'utf-8-sig'
 master_doc = 'index'
 
 # General information about the project.
-project = u"PROJ852: Mecaruco"
-copyright = u'2018, Ludovic Charleux'
+project = u"Scientific Python: a collection of science oriented python examples"
+copyright = u'2018, Ludovic Charleux, Emile Roux'
+show_authors = True
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
 # The short X.Y version.
-version = '0.1'
+version = '0.0'
 # The full version, including alpha/beta/rc tags.
 #release = '1.0.0'
 
@@ -209,58 +256,7 @@ html_show_copyright = False
 #html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = u'Mecaruco'
-
+htmlhelp_basename = u'Scientific Python'
 html_copy_source = True
 html_show_sourcelink = True
 
-# -- Options for LaTeX output --------------------------------------------------
-
-# The paper size ('letter' or 'a4').
-#latex_paper_size = 'letter'
-
-# The font size ('10pt', '11pt' or '12pt').
-#latex_font_size = '10pt'
-
-# Grouping the document tree into LaTeX files. List of tuples
-# (source start file, target name, title, author, documentclass [howto/manual]).
-"""
-latex_documents = [
-  ('index', 'Outils_Numeriques_cours.tex', u'Outils Numeriques Cours',
-   u'Ludovic Charleux, Fabien Formosa', 'manual'),
-]
-"""
-# The name of an image file (relative to this directory) to place at the top of
-# the title page.
-#latex_logo = None
-
-# For "manual" documents, if this is true, then toplevel headings are parts,
-# not chapters.
-#latex_use_parts = False
-
-# If true, show page references after internal links.
-#latex_show_pagerefs = False
-
-# If true, show URL addresses after external links.
-#latex_show_urls = False
-
-# Additional stuff for the LaTeX preamble.
-#latex_preamble = ''
-
-# Documents to append as an appendix to all manuals.
-#latex_appendices = []
-
-# If false, no module index is generated.
-#latex_domain_indices = True
-
-
-# -- Options for manual page output --------------------------------------------
-
-# One entry per manual page. List of tuples
-# (source start file, name, description, authors, manual section).
-"""
-man_pages = [
-    ('index', 'Outils numériques', u'Outils Numériques Cours',
-     [u'Ludovic Charleux, Fabien Formosa'], 1)
-]
-"""
